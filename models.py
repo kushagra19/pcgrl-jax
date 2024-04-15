@@ -19,6 +19,7 @@ def crop_rf(x, rf_size):
     return x[:, mid_x-math.floor(rf_size/2):mid_x+math.ceil(rf_size/2),
              mid_y-math.floor(rf_size/2):mid_y+math.ceil(rf_size/2)]
 
+
 def crop_arf_vrf(x, arf_size, vrf_size):
     return crop_rf(x, arf_size), crop_rf(x, vrf_size)
 
@@ -36,7 +37,8 @@ class Dense(nn.Module):
             activation = nn.relu
         else:
             activation = nn.tanh
-        x = jnp.concatenate((map_x.reshape((map_x.shape[0], -1)), flat_x), axis=-1)
+        x = jnp.concatenate(
+            (map_x.reshape((map_x.shape[0], -1)), flat_x), axis=-1)
         act = nn.Dense(
             self.hidden_dim, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
         )(x)
@@ -243,7 +245,8 @@ class NCA(nn.Module):
             activation = nn.tanh
 
         # Tile the flat observations to match the map dimensions
-        flat_x = jnp.tile(flat_x[:, None, None, :], (1, map_x.shape[1], map_x.shape[2], 1))
+        flat_x = jnp.tile(flat_x[:, None, None, :],
+                          (1, map_x.shape[1], map_x.shape[2], 1))
 
         # Concatenate the map and flat observations along the channel dimension
         x = jnp.concatenate((map_x, flat_x), axis=-1)
@@ -253,7 +256,7 @@ class NCA(nn.Module):
         x = nn.Conv(features=256, kernel_size=(5, 5), padding="SAME")(x)
         x = activation(x)
         x = nn.Conv(features=self.tile_action_dim,
-                      kernel_size=(3, 3), padding="SAME")(x)
+                    kernel_size=(3, 3), padding="SAME")(x)
 
         if self.representation == 'wide':
             act = x.reshape((x.shape[0], -1))
@@ -262,7 +265,8 @@ class NCA(nn.Module):
             act = x
 
         else:
-            raise NotImplementedError(f"Representation {self.representation} not implemented for NCA model.")
+            raise NotImplementedError(
+                f"Representation {self.representation} not implemented for NCA model.")
 
         # Generate random binary mask
         # mask = jax.random.uniform(rng[0], shape=actor_mean.shape) > 0.9
@@ -284,9 +288,11 @@ class NCA(nn.Module):
         # return act, critic
 
         critic = activation(x)
-        critic = nn.Conv(features=64, kernel_size=(5, 5), strides=(2, 2), padding="SAME")(x)
+        critic = nn.Conv(features=64, kernel_size=(
+            5, 5), strides=(2, 2), padding="SAME")(x)
         critic = activation(critic)
-        critic = nn.Conv(features=64, kernel_size=(5, 5), strides=(2, 2), padding="SAME")(x)
+        critic = nn.Conv(features=64, kernel_size=(
+            5, 5), strides=(2, 2), padding="SAME")(x)
         critic = activation(critic)
         critic = critic.reshape((critic.shape[0], -1))
         critic = activation(critic)
@@ -357,7 +363,7 @@ class ActorCriticPCGRL(nn.Module):
     @nn.compact
     def __call__(self, x: PCGRLObs):
         map_obs = x.map_obs
-        ctrl_obs = x.flat_obs   
+        ctrl_obs = x.flat_obs
 
         # Hack. We had to put dummy ctrl obs's here to placate jax tree map during minibatch creation (FIXME?)
         # Now we need to remove them :)
@@ -366,7 +372,7 @@ class ActorCriticPCGRL(nn.Module):
         # n_gpu = x.shape[0]
         # n_envs = x.shape[1]
         # x_shape = x.shape[2:]
-        # x = x.reshape((n_gpu * n_envs, *x_shape)) 
+        # x = x.reshape((n_gpu * n_envs, *x_shape))
 
         act, val = self.subnet(map_obs, ctrl_obs)
 
@@ -401,6 +407,144 @@ class ActorCritic(nn.Module):
         act, val = self.subnet(x, jnp.zeros((x.shape[0], 0)))
         pi = distrax.Categorical(logits=act)
         return pi, val
+
+
+class Adapter(nn.Module):
+    action_dim: Sequence[int]
+    act_shape: Tuple[int, int]
+    activation: str = "relu"
+    hidden_dim: int = 700
+
+    def __call__(self, map_x, flat_x):
+        if self.activation == "relu":
+            activation = nn.relu
+        else:
+            activation = nn.tanh
+
+        flat_action_dim = self.action_dim * math.prod(self.act_shape)
+        h1, h2 = self.hidden_dims
+
+        map_x = nn.Conv(
+            features=h1, kernel_size=(7, 7), strides=(2, 2), padding=(3, 3)
+        )(map_x)
+        map_x = activation(map_x)
+        map_x = nn.Conv(
+            features=h1, kernel_size=(7, 7), strides=(2, 2), padding=(3, 3)
+        )(map_x)
+        map_x = activation(map_x)
+
+        map_x = act.reshape((act.shape[0], -1))
+        x = jnp.concatenate((map_x, flat_x), axis=-1)
+
+        x = nn.Dense(
+            h2, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+        )(x)
+        x = activation(x)
+
+        x = nn.Dense(
+            h1, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+        )(x)
+        x = activation(x)
+
+        act, critic = x, x
+
+        act = nn.Dense(
+            flat_action_dim, kernel_init=orthogonal(0.01),
+            bias_init=constant(0.0)
+        )(act)
+
+        critic = nn.Dense(
+            1, kernel_init=orthogonal(1.0), bias_init=constant(0.0)
+        )(critic)
+
+        return act, jnp.squeeze(critic, axis=-1)
+
+
+class Policy(nn.Module):
+    action_dim: Sequence[int]
+    act_shape: Tuple[int, int]
+    activation: str = "relu"
+    hidden_dim: int = 700
+
+    def __call__(self, x):
+        if self.activation == "relu":
+            activation = nn.relu
+        else:
+            activation = nn.tanh
+
+        flat_action_dim = self.action_dim * math.prod(self.act_shape)
+
+        act = nn.Dense(
+            flat_action_dim, kernel_init=orthogonal(0.01),
+            bias_init=constant(0.0)
+        )(x)
+        act = activation(act)
+
+        act = nn.Dense(
+            flat_action_dim, kernel_init=orthogonal(0.01),
+            bias_init=constant(0.0)
+        )(act)
+
+        act = activation(act)
+        act = nn.Dense(
+            flat_action_dim, kernel_init=orthogonal(0.01),
+            bias_init=constant(0.0)
+        )(act)
+        act = activation(act)
+
+        return act
+
+class Head(nn.Module):
+    action_dim: Sequence[int]
+    act_shape: Tuple[int, int]
+    activation: str = "relu"
+    hidden_dim: int = 700
+
+    def __call__(self, x):
+        if self.activation == "relu":
+            activation = nn.relu
+        else:
+            activation = nn.tanh
+
+        flat_action_dim = self.action_dim * math.prod(self.act_shape)
+        act = nn.Dense(
+            flat_action_dim, kernel_init=orthogonal(0.01),
+            bias_init=constant(0.0)
+        )(x)
+        act = activation(act)
+
+        act = nn.Dense(
+            flat_action_dim, kernel_init=orthogonal(0.01),
+            bias_init=constant(0.0)
+        )(act)
+        act = nn.softmax(act)
+
+        return act
+
+class Transfer(nn.Module):
+    action_dim: Sequence[int]
+    act_shape: Tuple[int, int]
+    activation: str = "relu"
+    hidden_dim: int = 700
+
+    def __call__(self, x):
+        if self.activation == "relu":
+            activation = nn.relu
+        else:
+            activation = nn.tanh
+
+        adp = Adapter(action_dim=self.action_dim, activation=self.activation,
+            act_shape=self.act_shape,
+            hidden_dims=self.hidden_dims)(x)
+        poli = Policy(action_dim=self.action_dim, activation=self.activation,
+            act_shape=self.act_shape,
+            hidden_dims=self.hidden_dims)(adp)
+        out = Head(action_dim=self.action_dim, activation=self.activation,
+            act_shape=self.act_shape,
+            hidden_dims=self.hidden_dims)(poli)
+        
+        return out
+        
 
 
 if __name__ == '__main__':

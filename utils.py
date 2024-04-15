@@ -12,7 +12,7 @@ from envs.pcgrl_env import PROB_CLASSES, PCGRLEnvParams, PCGRLEnv, ProbEnum, Rep
 from envs.play_pcgrl_env import PlayPCGRLEnv, PlayPCGRLEnvParams
 from envs.probs.binary import BinaryProblem
 from envs.probs.problem import Problem
-from models import ActorCritic, ActorCriticPCGRL, ActorCriticPlayPCGRL, AutoEncoder, ConvForward, ConvForward2, Dense, NCA, SeqNCA
+from models import ActorCritic, ActorCriticPCGRL, ActorCriticPlayPCGRL, AutoEncoder, ConvForward, ConvForward2, Dense, NCA, SeqNCA, Transfer
 
 
 def get_exp_dir_evo_map(config: EvoMapConfig):
@@ -181,6 +181,12 @@ def init_network(env: PCGRLEnv, env_params: PCGRLEnvParams, config: Config):
                 action_dim=action_dim,
                 activation=config.activation,
             )
+    elif config.model == "transfer":
+        network = Transfer(
+            action_dim=action_dim, activation=config.activation,
+            act_shape=config.act_shape,
+            hidden_dims=config.hidden_dims,
+        )
     else:
         raise Exception(f"Unknown model {config.model}")
     # if config.env_name == 'PCGRL':

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 # @dataclass
 # class EnvConfig:
-#     problem: str = "binary"
+#     problem: str = "sokoban"
 #     representation: str = "nca"
 
 
@@ -31,8 +31,8 @@ class Config:
     exp_name: str = "0"
     seed: int = 0
 
-    problem: str = "binary"
-    representation: str = "narrow"
+    problem: str = "sokoban"
+    representation: str = "turtle"
     model: str = "conv"
 
     map_width: int = 16
@@ -93,7 +93,7 @@ class EvoMapConfig(Config):
 
 @dataclass
 class TrainConfig(Config):
-    overwrite: bool = False
+    overwrite: bool = True
 
     # Save a checkpoint after (at least) this many timesteps
     ckpt_freq: int = int(1e7)
@@ -144,7 +144,7 @@ class EvalConfig(TrainConfig):
 
 @dataclass
 class EnjoyConfig(EvalConfig):
-    random_agent: bool = False
+    random_agent: bool = True
     # How many episodes to render as gifs
     n_eps: int = 5
     eval_map_width: Optional[int] = None
