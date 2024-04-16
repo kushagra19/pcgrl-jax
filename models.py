@@ -512,37 +512,37 @@ class Head(nn.Module):
 
         return act
 
-class Transfer(nn.Module):
-    num_games: int
-    activation: str = "relu"
-    action_dim: list[Sequence[int]]
-    act_shape: list[Tuple[int, int]]
-    adapt_conv_dim1: list[Tuple[int, int]]
-    adapt_conv_dim2: list[Tuple[int, int]]
-    adapt_dense_dim1: list[Tuple[int, int]]
-    adapt_dense_dim2: list[Tuple[int, int]]
-    head_dense_dim: list[Tuple[int, int]]
+# class Transfer(nn.Module):
+#     num_games: int
+#     activation: str = "relu"
+#     action_dim: list[Sequence[int]]
+#     act_shape: list[Tuple[int, int]]
+#     adapt_conv_dim1: list[Tuple[int, int]]
+#     adapt_conv_dim2: list[Tuple[int, int]]
+#     adapt_dense_dim1: list[Tuple[int, int]]
+#     adapt_dense_dim2: list[Tuple[int, int]]
+#     head_dense_dim: list[Tuple[int, int]]
 
-    def __call__(self, x, game):
-        if self.activation == "relu":
-            activation = nn.relu
-        else:
-            activation = nn.tanh
+#     def __call__(self, x, game):
+#         if self.activation == "relu":
+#             activation = nn.relu
+#         else:
+#             activation = nn.tanh
 
-        adapters = [Adapter(conv_dim1=self.adapt_conv_dim1[i], conv_dim2=self.adapt_conv_dim2[i],
-                            dense_dim1=self.adapt_dense_dim1[i], dense_dim2=self.adapt_dense_dim2[i])(x[i])
-                     for i in range(self.num_games)]
+#         adapters = [Adapter(conv_dim1=self.adapt_conv_dim1[i], conv_dim2=self.adapt_conv_dim2[i],
+#                             dense_dim1=self.adapt_dense_dim1[i], dense_dim2=self.adapt_dense_dim2[i])(x[i])
+#                      for i in range(self.num_games)]
                      
-        # takes one adaptor at a time
-        poli, poli_critic = Policy(action_dim=self.action_dim, activation=self.activation,
-            act_shape=self.act_shape,
-            hidden_dims=self.hidden_dims)(adapters[game])
+#         # takes one adaptor at a time
+#         poli, poli_critic = Policy(action_dim=self.action_dim, activation=self.activation,
+#             act_shape=self.act_shape,
+#             hidden_dims=self.hidden_dims)(adapters[game])
         
-        head = [Head(caction_dim=self.action_dim[i], activation=self.activation,
-            act_shape=self.act_shape[i], dense_dim=self.head_dense_dim[i])(poli)
-                     for i in range(self.num_games)]
+#         head = [Head(caction_dim=self.action_dim[i], activation=self.activation,
+#             act_shape=self.act_shape[i], dense_dim=self.head_dense_dim[i])(poli)
+#                      for i in range(self.num_games)]
         
-        return head[game], poli_critic
+#         return head[game], poli_critic
 
 
 class ActorCriticTransfer(nn.Module):
