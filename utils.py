@@ -12,7 +12,7 @@ from envs.pcgrl_env import PROB_CLASSES, PCGRLEnvParams, PCGRLEnv, ProbEnum, Rep
 from envs.play_pcgrl_env import PlayPCGRLEnv, PlayPCGRLEnvParams
 from envs.probs.binary import BinaryProblem
 from envs.probs.problem import Problem
-from models import ActorCritic, ActorCriticPCGRL, ActorCriticPlayPCGRL, AutoEncoder, ConvForward, ConvForward2, Dense, NCA, SeqNCA
+from models import ActorCritic, ActorCriticPCGRL, ActorCriticPlayPCGRL, ActorCriticTransfer, AutoEncoder, ConvForward, ConvForward2, Dense, NCA, SeqNCA, Transfer, Adapter, Policy, Head
 
 
 def get_exp_dir_evo_map(config: EvoMapConfig):
@@ -139,7 +139,7 @@ def init_network(env: PCGRLEnv, env_params: PCGRLEnvParams, config: Config):
         # First consider number of possible tiles
         # action_dim = env.action_space(env_params).n
         # action_dim = env.rep.per_tile_action_dim
-    
+
     else:
         action_dim = env.num_actions
 
@@ -193,6 +193,30 @@ def init_network(env: PCGRLEnv, env_params: PCGRLEnvParams, config: Config):
         network = ActorCritic(network)
     return network
 
+def init_network_transfer(env: list[PCGRLEnv], env_params: list[PCGRLEnvParams], config: Config):
+    action_dim = [env[i].rep.action_space.n for i in config.n_games]
+    networks = []
+
+    if config.model == "transfer":
+        policy, critic = Policy(
+            activation=config.activation, dense_dim1=config.poli_dense_dim1, dense_dim2=config.poli_dense_dim1)
+        for i in range(config.num_games):
+            adapter = Adapter(
+                activation=config.activation,
+                conv_dim1=config.adapt_conv_dim1[i], conv_dim2=config.adapt_conv_dim2[i],
+                dense_dim1=config.adapt_dense_dim1[i],dense_dim2=config.adapt_dense_dim2[input])
+            head = Head(
+                action_dim=action_dim[i], act_shape=config.act_shape[i],activation=config.activation,
+                dense_dim=config.dense_dim[i])
+            
+            network = head(policy(adapter))
+            network = ActorCriticTransfer(network, val=critic, act_shape=config.act_shape[i],
+                            n_agents=config.n_agents, n_ctrl_metrics=len(config.ctrl_metrics))
+            networks.append(network)
+    else:
+        raise Exception(f"Not PCGRLTransfer")
+    return networks
+
         
 def get_env_params_from_config(config: Config):
     map_shape = ((config.map_width, config.map_width) if not config.is_3d
@@ -227,6 +251,38 @@ def get_env_params_from_config(config: Config):
     )
     return env_params
 
+def get_env_params_from_config_transfer(config: Config, game: int):
+    map_shape = ((config.map_width, config.map_width) if not config.is_3d
+                 else (config.map_width, config.map_width, config.map_width))
+    rf_size = max(config.arf_size, config.vrf_size)
+    rf_shape = (rf_size, rf_size) if not config.is_3d else (rf_size, rf_size, rf_size)
+
+    act_shape = tuple(config.act_shape)
+    if config.is_3d:
+        assert len(config.act_shape) == 3
+
+    # Convert strings to enum ints
+    problem = ProbEnum[config.problem.upper()]
+    prob_cls = PROB_CLASSES[problem]
+    ctrl_metrics = tuple([int(prob_cls.metrics_enum[c.upper()]) for c in config.ctrl_metrics])
+
+    env_params = PCGRLEnvParams(
+        problem=problem[game],
+        representation=int(RepEnum[config.representation.upper()]),
+        map_shape=map_shape,
+        rf_shape=rf_shape,
+        act_shape=act_shape[game],
+        static_tile_prob=config.static_tile_prob,
+        n_freezies=config.n_freezies,
+        n_agents=config.n_agents,
+        max_board_scans=config.max_board_scans,
+        ctrl_metrics=ctrl_metrics,
+        change_pct=config.change_pct,
+        randomize_map_shape=config.randomize_map_shape,
+        empty_start=config.empty_start,
+        pinpoints=config.pinpoints,
+    )
+    return env_params
 
 def get_play_env_params_from_config(config: Config):
     map_shape = (config.map_width, config.map_width)
@@ -253,6 +309,15 @@ def gymnax_pcgrl_make(env_name, config: Config, **env_kwargs):
     elif env_name == 'Candy':
         env_params = CandyParams()
         env = Candy(env_params)
+
+    return env, env_params
+
+def gymnax_pcgrl_make_transfer(env_name, config: Config, game:int, **env_kwargs):
+    if env_name in gymnax.registered_envs:
+        return gymnax.make(env_name)
+
+    env_params = get_env_params_from_config_transfer(config, game)
+    env = PCGRLEnv(env_params)
 
     return env, env_params
 
