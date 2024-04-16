@@ -21,10 +21,10 @@ class Config:
     GAMMA: float = 0.99
     GAE_LAMBDA: float = 0.95
     CLIP_EPS: float = 0.2
-    ENT_COEF: float = 0.01
-    VF_COEF: float = 0.5
+    ENT_OEF: float = 0.5
     MAX_GRAD_NORM: float = 0.5
-    activation: str = "relu"
+    activCOEF: float = 0.01
+    VF_Cation: str = "relu"
     env_name: str = "PCGRL"
     ANNEAL_LR: bool = False
     DEBUG: bool = True
@@ -152,7 +152,95 @@ class EnjoyConfig(EvalConfig):
     n_enjoy_envs: int = 1
     render_ims: bool = False
 
-    
+@dataclass
+class TransferTrainConfig:
+    lr: float = 1.0e-4
+    n_envs: int = 4
+    num_steps: int = 128
+    total_timesteps: int = int(5e7)
+    timestep_chunk_size: int = -1
+    update_epochs: int = 10
+    NUM_MINIBATCHES: int = 4
+    GAMMA: float = 0.99
+    GAE_LAMBDA: float = 0.95
+    CLIP_EPS: float = 0.2
+    ENT_OEF: float = 0.5
+    MAX_GRAD_NORM: float = 0.5
+    activCOEF: float = 0.01
+    VF_Cation: str = "relu"
+    env_name: str = "PCGRL"
+    ANNEAL_LR: bool = False
+    DEBUG: bool = True
+    exp_name: str = "0"
+    seed: int = 0
+
+    problem: str = ["sokoban"]              #TODO: need filling out
+    representation: str = "turtle"
+    model: str = "transfer"
+
+    map_width: int = 16
+    randomize_map_shape: bool = False
+    is_3d: bool = False
+    # ctrl_metrics: Tuple[str] = ('diameter', 'n_regions')
+    ctrl_metrics: Tuple[str] = ()
+    # Size of the receptive field to be fed to the action subnetwork.
+    vrf_size: Optional[int] = -1  # -1 means 2 * map_width - 1, i.e. full observation, 31 if map_width=16
+    # Size of the receptive field to be fed to the value subnetwork.
+    arf_size: Optional[int] = -1  # -1 means 2 * map_width - 1, i.e. full observation, 31 if map_width=16
+    # TODO: actually take arf and vrf into account in models, where possible
+
+    change_pct: float = -1.0
+
+    act_shape: list[Tuple[int, int]] = [(1, 1)] #TODO: need filling out
+
+    static_tile_prob: Optional[float] = 0.0
+    n_freezies: int = 0
+    n_agents: int = 1  # multi-agent is fake and broken
+    max_board_scans: float = 3.0
+
+    # How many milliseconds to wait between frames of the rendered gifs
+    gif_frame_duration: int = 25
+
+    """ DO NOT USE. WILL BE OVERWRITTEN. """
+    exp_dir: Optional[str] = None
+    n_gpus: int = 1
+
+    # To make the task simpler, always start with an empty map
+    empty_start: bool = False
+
+    # In problems with tile-types with specified valid numbers, fix/freeze their random placement at the beginning of 
+    # each episode.
+    pinpoints: bool = False
+
+    # TODO: TRANSFER PARAMS (fill out)
+    num_games: int
+    activation: str = "relu"
+    act_shape: list[Tuple[int, int]]
+    adapt_conv_dim1: list[Tuple[int, int]]
+    adapt_conv_dim2: list[Tuple[int, int]]
+    adapt_dense_dim1: list[Tuple[int, int]]
+    adapt_dense_dim2: list[Tuple[int, int]]
+    poli_dense_dim1: Tuple[int, int]
+    poli_dense_dim2: Tuple[int, int]
+    head_dense_dim: list[Tuple[int, int]]
+
+    # TRAINING
+    # Save a checkpoint after (at least) this many timesteps
+    ckpt_freq: int = int(1e7)
+    # Render after this many update steps
+    render_freq: int = 1000
+    n_render_eps: int = 3
+
+    # eval the model on pre-made eval freezie maps to see how it's doing
+    eval_freq: int = 100
+    n_eval_maps: int = 6
+    eval_map_path: str = "user_defined_freezies/binary_eval_maps.json"
+    # discount factor for regret value calculation is the same as GAMMA
+
+    # NOTE: DO NOT MODIFY THESE. WILL BE SET AUTOMATICALLY AT RUNTIME. ########
+    NUM_UPDATES: Optional[int] = None
+    MINIBATCH_SIZE: Optional[int] = None
+
 
 @dataclass
 class ProfileEnvConfig(Config):

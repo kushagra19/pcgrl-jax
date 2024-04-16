@@ -410,61 +410,47 @@ class ActorCritic(nn.Module):
 
 
 class Adapter(nn.Module):
-    action_dim: Sequence[int]
-    act_shape: Tuple[int, int]
     activation: str = "relu"
-    hidden_dim: int = 700
+    conv_dim1: Tuple[int, int]
+    conv_dim2: Tuple[int, int]
+    dense_dim1: Tuple[int, int]
+    dense_dim2: Tuple[int, int]
 
     def __call__(self, map_x, flat_x):
-        if self.activation == "relu":
+        if self.activation == "relu": 
             activation = nn.relu
         else:
             activation = nn.tanh
 
-        flat_action_dim = self.action_dim * math.prod(self.act_shape)
-        h1, h2 = self.hidden_dims
-
         map_x = nn.Conv(
-            features=h1, kernel_size=(7, 7), strides=(2, 2), padding=(3, 3)
+            features=self.conv_dim1, kernel_size=(7, 7), strides=(2, 2), padding=(3, 3)
         )(map_x)
         map_x = activation(map_x)
         map_x = nn.Conv(
-            features=h1, kernel_size=(7, 7), strides=(2, 2), padding=(3, 3)
+            features=self.conv_dim2, kernel_size=(7, 7), strides=(2, 2), padding=(3, 3)
         )(map_x)
         map_x = activation(map_x)
 
-        map_x = act.reshape((act.shape[0], -1))
+        map_x = map_x.reshape((map_x.shape[0], -1))
         x = jnp.concatenate((map_x, flat_x), axis=-1)
 
         x = nn.Dense(
-            h2, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            self.dense_dim1, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
         )(x)
         x = activation(x)
 
         x = nn.Dense(
-            h1, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            self.dense_dim2, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
         )(x)
-        x = activation(x)
 
-        act, critic = x, x
-
-        act = nn.Dense(
-            flat_action_dim, kernel_init=orthogonal(0.01),
-            bias_init=constant(0.0)
-        )(act)
-
-        critic = nn.Dense(
-            1, kernel_init=orthogonal(1.0), bias_init=constant(0.0)
-        )(critic)
-
-        return act, jnp.squeeze(critic, axis=-1)
+        return x
 
 
 class Policy(nn.Module):
-    action_dim: Sequence[int]
-    act_shape: Tuple[int, int]
     activation: str = "relu"
-    hidden_dim: int = 700
+    dense_dim1: Tuple[int, int]
+    dense_dim2: Tuple[int, int]
+
 
     def __call__(self, x):
         if self.activation == "relu":
@@ -472,33 +458,37 @@ class Policy(nn.Module):
         else:
             activation = nn.tanh
 
-        flat_action_dim = self.action_dim * math.prod(self.act_shape)
+        act, critic = x, x
 
         act = nn.Dense(
-            flat_action_dim, kernel_init=orthogonal(0.01),
-            bias_init=constant(0.0)
-        )(x)
-        act = activation(act)
-
-        act = nn.Dense(
-            flat_action_dim, kernel_init=orthogonal(0.01),
-            bias_init=constant(0.0)
-        )(act)
-
-        act = activation(act)
-        act = nn.Dense(
-            flat_action_dim, kernel_init=orthogonal(0.01),
+            self.dense_dim1, kernel_init=orthogonal(0.01),
             bias_init=constant(0.0)
         )(act)
         act = activation(act)
 
-        return act
+        act = nn.Dense(
+            self.dense_dim2, kernel_init=orthogonal(0.01),
+            bias_init=constant(0.0)
+        )(act)
+        act = activation(act)
+
+        critic = nn.Dense(
+            self.dense_dim1, kernel_init=orthogonal(1.0), bias_init=constant(0.0)
+        )(critic)
+        act = activation(act)
+
+        critic = nn.Dense(
+            1, kernel_init=orthogonal(1.0), bias_init=constant(0.0)
+        )(critic)
+        act = activation(act)
+
+        return act, critic
 
 class Head(nn.Module):
     action_dim: Sequence[int]
     act_shape: Tuple[int, int]
     activation: str = "relu"
-    hidden_dim: int = 700
+    dense_dim: Tuple[int, int]
 
     def __call__(self, x):
         if self.activation == "relu":
@@ -507,8 +497,9 @@ class Head(nn.Module):
             activation = nn.tanh
 
         flat_action_dim = self.action_dim * math.prod(self.act_shape)
+
         act = nn.Dense(
-            flat_action_dim, kernel_init=orthogonal(0.01),
+            self.dense_dim, kernel_init=orthogonal(0.01),
             bias_init=constant(0.0)
         )(x)
         act = activation(act)
@@ -522,29 +513,70 @@ class Head(nn.Module):
         return act
 
 class Transfer(nn.Module):
-    action_dim: Sequence[int]
-    act_shape: Tuple[int, int]
+    num_games: int
     activation: str = "relu"
-    hidden_dim: int = 700
+    action_dim: list[Sequence[int]]
+    act_shape: list[Tuple[int, int]]
+    adapt_conv_dim1: list[Tuple[int, int]]
+    adapt_conv_dim2: list[Tuple[int, int]]
+    adapt_dense_dim1: list[Tuple[int, int]]
+    adapt_dense_dim2: list[Tuple[int, int]]
+    head_dense_dim: list[Tuple[int, int]]
 
-    def __call__(self, x):
+    def __call__(self, x, game):
         if self.activation == "relu":
             activation = nn.relu
         else:
             activation = nn.tanh
 
-        adp = Adapter(action_dim=self.action_dim, activation=self.activation,
+        adapters = [Adapter(conv_dim1=self.adapt_conv_dim1[i], conv_dim2=self.adapt_conv_dim2[i],
+                            dense_dim1=self.adapt_dense_dim1[i], dense_dim2=self.adapt_dense_dim2[i])(x[i])
+                     for i in range(self.num_games)]
+                     
+        # takes one adaptor at a time
+        poli, poli_critic = Policy(action_dim=self.action_dim, activation=self.activation,
             act_shape=self.act_shape,
-            hidden_dims=self.hidden_dims)(x)
-        poli = Policy(action_dim=self.action_dim, activation=self.activation,
-            act_shape=self.act_shape,
-            hidden_dims=self.hidden_dims)(adp)
-        out = Head(action_dim=self.action_dim, activation=self.activation,
-            act_shape=self.act_shape,
-            hidden_dims=self.hidden_dims)(poli)
+            hidden_dims=self.hidden_dims)(adapters[game])
         
-        return out
+        head = [Head(caction_dim=self.action_dim[i], activation=self.activation,
+            act_shape=self.act_shape[i], dense_dim=self.head_dense_dim[i])(poli)
+                     for i in range(self.num_games)]
         
+        return head[game], poli_critic
+
+
+class ActorCriticTransfer(nn.Module):
+    """Transform the action output into a distribution. Do some pre- and post-processing specific to the 
+    PCGRL environments."""
+    subnet: nn.Module
+    val: nn.Module
+    act_shape: list[Tuple[int, int]]
+    n_agents: int
+    n_ctrl_metrics: int
+
+    @nn.compact
+    def __call__(self, x: PCGRLObs, game: int):
+        map_obs = x.map_obs
+        ctrl_obs = x.flat_obs
+
+        # Hack. We had to put dummy ctrl obs's here to placate jax tree map during minibatch creation (FIXME?)
+        # Now we need to remove them :)
+        ctrl_obs = ctrl_obs[:, :self.n_ctrl_metrics]
+
+        # n_gpu = x.shape[0]
+        # n_envs = x.shape[1]
+        # x_shape = x.shape[2:]
+        # x = x.reshape((n_gpu * n_envs, *x_shape))
+
+        act = self.subnet(map_obs, ctrl_obs)
+
+        act = act.reshape((act.shape[0], self.n_agents, *self.act_shape[game], -1))
+        # val = val.reshape((n_gpu, n_envs))
+        # act = act.reshape((n_gpu, n_envs, self.n_agents, *self.act_shape, -1))
+
+        pi = distrax.Categorical(logits=act)
+
+        return pi, self.val
 
 
 if __name__ == '__main__':

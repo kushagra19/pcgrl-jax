@@ -15,11 +15,11 @@ from flax.training import orbax_utils
 import orbax
 from tensorboardX import SummaryWriter
 
-from conf.config import Config, TrainConfig
+from conf.config import Config, TrainConfig, TransferTrainConfig
 from envs.pcgrl_env import (gen_dummy_queued_state, gen_dummy_queued_state_old,
                             OldQueuedState)
 from purejaxrl.experimental.s5.wrappers import LogWrapper
-from utils import (get_ckpt_dir, get_exp_dir, init_network, gymnax_pcgrl_make,
+from utils import (get_ckpt_dir, get_exp_dir, init_network_transfer, gymnax_pcgrl_make_transfer,
                    init_config)
 
 
@@ -80,14 +80,14 @@ def log_callback(metric, steps_prev_complete, config, writer, train_start_time):
         #     writer.add_scalar(k, v, t)
 
 
-def make_train(config: TrainConfig, restored_ckpt, checkpoint_manager):
+def make_train(config: TransferTrainConfig, restored_ckpt, checkpoint_manager, game):
     config.NUM_UPDATES = (
         config.total_timesteps // config.num_steps // config.n_envs
     )
     config.MINIBATCH_SIZE = (
         config.n_envs * config.num_steps // config.NUM_MINIBATCHES
     )
-    env_r, env_params = gymnax_pcgrl_make(config.env_name, config=config)
+    env_r, env_params = gymnax_pcgrl_make_transfer(config.env_name, config=config)
     # env = FlattenObservationWrapper(env)
     env = LogWrapper(env_r)
     env_r.init_graphics()
@@ -100,7 +100,7 @@ def make_train(config: TrainConfig, restored_ckpt, checkpoint_manager):
         )
         return config["LR"] * frac
 
-    def train(rng, config: TrainConfig):
+    def train(rng, config: TransferTrainConfig):
 
         train_start_time = timer()
 
@@ -108,7 +108,7 @@ def make_train(config: TrainConfig, restored_ckpt, checkpoint_manager):
         writer = SummaryWriter(get_exp_dir(config))
 
         # INIT NETWORK
-        network = init_network(env, env_params, config)
+        network = init_network_transfer(env, env_params, config)
 
         rng, _rng = jax.random.split(rng)
         init_x = env.gen_dummy_obs(env_params)
@@ -512,7 +512,6 @@ def make_train(config: TrainConfig, restored_ckpt, checkpoint_manager):
 
     return lambda rng: train(rng, config)
 
-
 # def plot_ep_returns(ep_returns, config):
 #     plt.plot(ep_returns)
 #     plt.xlabel("Timesteps")
@@ -643,7 +642,7 @@ def init_checkpointer(config: Config) -> Tuple[Any, dict]:
     return checkpoint_manager, restored_ckpt
 
     
-def main_chunk(config, rng, exp_dir):
+def main_chunk(config, rng, exp_dir, game):
     checkpoint_manager, restored_ckpt = init_checkpointer(config)
 
     # if restored_ckpt is not None:
@@ -658,7 +657,7 @@ def main_chunk(config, rng, exp_dir):
         with open(os.path.join(exp_dir, "progress.csv"), "w") as f:
             f.write("timestep,ep_return\n")
 
-    train_jit = jax.jit(make_train(config, restored_ckpt, checkpoint_manager))
+    train_jit = jax.jit(make_train(config, restored_ckpt, checkpoint_manager, game))
     out = train_jit(rng)
     return out
 
@@ -680,7 +679,7 @@ def main(config: TrainConfig):
         for i in range(n_chunks):
             config.total_timesteps = config.timestep_chunk_size + (i * config.timestep_chunk_size)
             print(f"Running chunk {i+1}/{n_chunks}")
-            out = main_chunk(config, rng, exp_dir)
+            out = main_chunk(config, rng, exp_dir, game)
 
     else:
         out = main_chunk(config, rng, exp_dir)        
