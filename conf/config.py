@@ -31,9 +31,9 @@ class Config:
     exp_name: str = "0"
     seed: int = 0
 
-    problem: str = "sokoban"
-    representation: str = "turtle"
-    model: str = "conv"
+    problem: str = "binary"
+    representation: str = "narrow"
+    model: str = "transfer"
 
     map_width: int = 16
     randomize_map_shape: bool = False
@@ -45,7 +45,7 @@ class Config:
     # Size of the receptive field to be fed to the value subnetwork.
     arf_size: Optional[int] = -1  # -1 means 2 * map_width - 1, i.e. full observation, 31 if map_width=16
     # TODO: actually take arf and vrf into account in models, where possible
-
+    activation: str = "relu"
     change_pct: float = -1.0
 
     # The shape of the (patch of) edit(s) to be made by the edited by the generator at each step.
@@ -153,7 +153,7 @@ class EnjoyConfig(EvalConfig):
     render_ims: bool = False
 
 @dataclass
-class TransferTrainConfig:
+class TransferConfig:
     lr: float = 1.0e-4
     n_envs: int = 4
     num_steps: int = 128
@@ -174,8 +174,8 @@ class TransferTrainConfig:
     exp_name: str = "0"
     seed: int = 0
 
-    problem: str = ["sokoban"]              #TODO: need filling out
-    representation: str = "turtle"
+    problem: Tuple[str] = ("binary", "maze", "dungeon")         #TODO: need filling out
+    representation: str = "narrow"
     model: str = "transfer"
 
     map_width: int = 16
@@ -191,7 +191,7 @@ class TransferTrainConfig:
 
     change_pct: float = -1.0
 
-    act_shape: list[Tuple[int, int]] = [(1, 1)] #TODO: need filling out
+    act_shape: Tuple[int, int] = (1, 1) #TODO: need filling out
 
     static_tile_prob: Optional[float] = 0.0
     n_freezies: int = 0
@@ -213,16 +213,14 @@ class TransferTrainConfig:
     pinpoints: bool = False
 
     # TODO: TRANSFER PARAMS (fill out)
-    num_games: int
+    num_games: int = 3
     activation: str = "relu"
-    act_shape: list[Tuple[int, int]]
-    adapt_conv_dim1: list[Tuple[int, int]]
-    adapt_conv_dim2: list[Tuple[int, int]]
-    adapt_dense_dim1: list[Tuple[int, int]]
-    adapt_dense_dim2: list[Tuple[int, int]]
-    poli_dense_dim1: Tuple[int, int]
-    poli_dense_dim2: Tuple[int, int]
-    head_dense_dim: list[Tuple[int, int]]
+    # act_shape: Tuple[int, int] Defined above 
+    adapt_conv_dims: Tuple[int, int]= (64, 256)
+    adapt_dense_dims: Tuple[int, int]= (64, 256)
+    policy_dense_dims: Tuple[int, int]= (64, 256)
+    head_dense_dims: Tuple[int, int]= (64, 256)
+    hidden_dims: Tuple[int] = (64, 256)
 
     # TRAINING
     # Save a checkpoint after (at least) this many timesteps
@@ -236,7 +234,8 @@ class TransferTrainConfig:
     n_eval_maps: int = 6
     eval_map_path: str = "user_defined_freezies/binary_eval_maps.json"
     # discount factor for regret value calculation is the same as GAMMA
-
+    profile_fps: bool = False
+    overwrite: bool = True
     # NOTE: DO NOT MODIFY THESE. WILL BE SET AUTOMATICALLY AT RUNTIME. ########
     NUM_UPDATES: Optional[int] = None
     MINIBATCH_SIZE: Optional[int] = None
@@ -264,3 +263,4 @@ cs.store(name="enjoy_pcgrl", node=EnjoyConfig)
 cs.store(name="eval_pcgrl", node=EvalConfig)
 cs.store(name="profile_pcgrl", node=ProfileEnvConfig)
 cs.store(name="batch_pcgrl", node=SweepConfig)
+cs.store(name="transfer_pcgrl", node=TransferConfig)
