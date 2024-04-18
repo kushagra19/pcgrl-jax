@@ -410,24 +410,26 @@ class ActorCritic(nn.Module):
 
 
 class Adapter(nn.Module):
+    conv_dims: Tuple[int, int]
+    dense_dims: Tuple[int, int]
     activation: str = "relu"
-    conv_dim1: Tuple[int, int]
-    conv_dim2: Tuple[int, int]
-    dense_dim1: Tuple[int, int]
-    dense_dim2: Tuple[int, int]
 
+    @nn.compact
     def __call__(self, map_x, flat_x):
         if self.activation == "relu": 
             activation = nn.relu
         else:
             activation = nn.tanh
 
+        conv_dim1, conv_dim2 = self.conv_dims
+        dense_dim1, dense_dim2 = self.dense_dims
+
         map_x = nn.Conv(
-            features=self.conv_dim1, kernel_size=(7, 7), strides=(2, 2), padding=(3, 3)
+            features=conv_dim1, kernel_size=(7, 7), strides=(2, 2), padding=(3, 3)
         )(map_x)
         map_x = activation(map_x)
         map_x = nn.Conv(
-            features=self.conv_dim2, kernel_size=(7, 7), strides=(2, 2), padding=(3, 3)
+            features=conv_dim2, kernel_size=(7, 7), strides=(2, 2), padding=(3, 3)
         )(map_x)
         map_x = activation(map_x)
 
@@ -435,71 +437,74 @@ class Adapter(nn.Module):
         x = jnp.concatenate((map_x, flat_x), axis=-1)
 
         x = nn.Dense(
-            self.dense_dim1, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            dense_dim1, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
         )(x)
         x = activation(x)
 
         x = nn.Dense(
-            self.dense_dim2, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            dense_dim2, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
         )(x)
+
+        x = activation(x)
 
         return x
 
 
 class Policy(nn.Module):
+    dense_dims: Tuple[int, int]
     activation: str = "relu"
-    dense_dim1: Tuple[int, int]
-    dense_dim2: Tuple[int, int]
 
-
+    @nn.compact
     def __call__(self, x):
         if self.activation == "relu":
             activation = nn.relu
         else:
             activation = nn.tanh
 
+        dense_dim1, dense_dim2 = self.dense_dims
         act, critic = x, x
 
         act = nn.Dense(
-            self.dense_dim1, kernel_init=orthogonal(0.01),
+            dense_dim1, kernel_init=orthogonal(0.01),
             bias_init=constant(0.0)
         )(act)
         act = activation(act)
 
         act = nn.Dense(
-            self.dense_dim2, kernel_init=orthogonal(0.01),
+            dense_dim2, kernel_init=orthogonal(0.01),
             bias_init=constant(0.0)
         )(act)
         act = activation(act)
 
         critic = nn.Dense(
-            self.dense_dim1, kernel_init=orthogonal(1.0), bias_init=constant(0.0)
+            dense_dim1, kernel_init=orthogonal(1.0), bias_init=constant(0.0)
         )(critic)
-        act = activation(act)
+        critic = activation(critic)
 
         critic = nn.Dense(
             1, kernel_init=orthogonal(1.0), bias_init=constant(0.0)
         )(critic)
-        act = activation(act)
 
-        return act, critic
+        return critic
 
 class Head(nn.Module):
     action_dim: Sequence[int]
     act_shape: Tuple[int, int]
+    dense_dims: Tuple[int, int]
     activation: str = "relu"
-    dense_dim: Tuple[int, int]
 
+    @nn.compact
     def __call__(self, x):
         if self.activation == "relu":
             activation = nn.relu
         else:
             activation = nn.tanh
 
+        dense_dim1, _ = self.dense_dims
         flat_action_dim = self.action_dim * math.prod(self.act_shape)
 
         act = nn.Dense(
-            self.dense_dim, kernel_init=orthogonal(0.01),
+            dense_dim1, kernel_init=orthogonal(0.01),
             bias_init=constant(0.0)
         )(x)
         act = activation(act)
@@ -512,52 +517,84 @@ class Head(nn.Module):
 
         return act
 
-# class Transfer(nn.Module):
-#     num_games: int
-#     activation: str = "relu"
-#     action_dim: list[Sequence[int]]
-#     act_shape: list[Tuple[int, int]]
-#     adapt_conv_dim1: list[Tuple[int, int]]
-#     adapt_conv_dim2: list[Tuple[int, int]]
-#     adapt_dense_dim1: list[Tuple[int, int]]
-#     adapt_dense_dim2: list[Tuple[int, int]]
-#     head_dense_dim: list[Tuple[int, int]]
+class Transfer(nn.Module):
+    num_games: int
+    action_dim: list
+    act_shape: Tuple[int,int]
+    adapt_conv_dims: Tuple[int,int]
+    adapt_dense_dims: Tuple[int,int]
+    policy_dense_dims: Tuple[int,int]
+    head_dense_dims: Tuple[int,int]
+    activation: str = "relu"
 
-#     def __call__(self, x, game):
-#         if self.activation == "relu":
-#             activation = nn.relu
-#         else:
-#             activation = nn.tanh
+    def setup(self):
+        if self.activation == "relu":
+            self.activation_fn = nn.relu
+        else:
+            self.activation_fn = nn.tanh
 
-#         adapters = [Adapter(conv_dim1=self.adapt_conv_dim1[i], conv_dim2=self.adapt_conv_dim2[i],
-#                             dense_dim1=self.adapt_dense_dim1[i], dense_dim2=self.adapt_dense_dim2[i])(x[i])
-#                      for i in range(self.num_games)]
-                     
-#         # takes one adaptor at a time
-#         poli, poli_critic = Policy(action_dim=self.action_dim, activation=self.activation,
-#             act_shape=self.act_shape,
-#             hidden_dims=self.hidden_dims)(adapters[game])
-        
-#         head = [Head(caction_dim=self.action_dim[i], activation=self.activation,
-#             act_shape=self.act_shape[i], dense_dim=self.head_dense_dim[i])(poli)
-#                      for i in range(self.num_games)]
-        
-#         return head[game], poli_critic
+        self.adapters = [Adapter(conv_dims = self.adapt_conv_dims, dense_dims = self.adapt_dense_dims) 
+                         for i in range(self.num_games)]
+
+        self.policy = Policy(dense_dims = self.policy_dense_dims)
+
+        self.heads = [Head(action_dim = self.action_dim[i], act_shape = self.act_shape, dense_dims = self.head_dense_dims)  # Need to be fixed
+                     for i in range(self.num_games)]
+
+    def __call__(self, map_x, flat_x):
+        adapter_outputs = [self.adapters[i](map_x[i], flat_x[i]) 
+                         for i in range(self.num_games)]
+        policy_outputs = [self.policy(adapter_outputs[i]) for i in range(self.num_games)]
+        head_outputs = [self.heads[i](policy_outputs[i]) for i in range(self.num_games)]
+        return head_outputs, policy_outputs
+    
+    def forward(self, map_x, flat_x, game):
+        adapter_output = self.adapters[game](map_x, flat_x)
+        policy_output = self.policy(adapter_output)
+        head_output = self.heads[game](policy_output)
+        return head_output, policy_output
 
 
-class ActorCriticTransfer(nn.Module):
+class ActorCriticPCGRLTransfer(nn.Module):
     """Transform the action output into a distribution. Do some pre- and post-processing specific to the 
     PCGRL environments."""
     subnet: nn.Module
-    val: nn.Module
-    act_shape: list[Tuple[int, int]]
+    act_shape: Tuple[int, int]
     n_agents: int
     n_ctrl_metrics: int
 
-    @nn.compact
-    def __call__(self, x: PCGRLObs, game: int):
+    def setup(self):
+        self.network = self.subnet
+
+    def __call__(self, x: PCGRLObs, num_games):
+        map_obs = [x[i].map_obs for i in range(num_games)]
+        ctrl_obs = [x[i].flat_obs for i in range(num_games)]
+        # print("Game inside transfer:", game)
+
+        # Hack. We had to put dummy ctrl obs's here to placate jax tree map during minibatch creation (FIXME?)
+        # Now we need to remove them :)
+        ctrl_obs = [ctrl_obs[i][:, :self.n_ctrl_metrics] for i in range(num_games)]
+
+        # n_gpu = x.shape[0]
+        # n_envs = x.shape[1]
+        # x_shape = x.shape[2:]
+        # x = x.reshape((n_gpu * n_envs, *x_shape))
+
+        act, val = self.network(map_obs, ctrl_obs)
+
+        act = [act[i].reshape((act[i].shape[0], self.n_agents, *self.act_shape, -1)) for i in range(num_games)]
+        # val = val.reshape((n_gpu, n_envs))
+        # act = act.reshape((n_gpu, n_envs, self.n_agents, *self.act_shape, -1))
+
+        pi = [distrax.Categorical(logits=act[i]) for i in range(num_games)]
+
+        return pi, val
+
+        
+    def forward(self, x: PCGRLObs, game: int):
         map_obs = x.map_obs
         ctrl_obs = x.flat_obs
+        # print("Game inside transfer:", game)
 
         # Hack. We had to put dummy ctrl obs's here to placate jax tree map during minibatch creation (FIXME?)
         # Now we need to remove them :)
@@ -568,15 +605,15 @@ class ActorCriticTransfer(nn.Module):
         # x_shape = x.shape[2:]
         # x = x.reshape((n_gpu * n_envs, *x_shape))
 
-        act = self.subnet(map_obs, ctrl_obs)
+        act, val = self.network.forward(map_obs, ctrl_obs, game)
 
-        act = act.reshape((act.shape[0], self.n_agents, *self.act_shape[game], -1))
+        act = act.reshape((act.shape[0], self.n_agents, *self.act_shape, -1))
         # val = val.reshape((n_gpu, n_envs))
         # act = act.reshape((n_gpu, n_envs, self.n_agents, *self.act_shape, -1))
 
         pi = distrax.Categorical(logits=act)
 
-        return pi, self.val
+        return pi, val
 
 
 if __name__ == '__main__':
