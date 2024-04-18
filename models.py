@@ -485,7 +485,7 @@ class Policy(nn.Module):
             1, kernel_init=orthogonal(1.0), bias_init=constant(0.0)
         )(critic)
 
-        return critic
+        return act,critic
 
 class Head(nn.Module):
     action_dim: Sequence[int]
@@ -544,14 +544,14 @@ class Transfer(nn.Module):
     def __call__(self, map_x, flat_x):
         adapter_outputs = [self.adapters[i](map_x[i], flat_x[i]) 
                          for i in range(self.num_games)]
-        policy_outputs = [self.policy(adapter_outputs[i]) for i in range(self.num_games)]
-        head_outputs = [self.heads[i](policy_outputs[i]) for i in range(self.num_games)]
+        actor_outputs, policy_outputs = self.policy(adapter_outputs[0])
+        head_outputs = [self.heads[i](actor_outputs[i]) for i in range(self.num_games)]
         return head_outputs, policy_outputs
     
     def forward(self, map_x, flat_x, game):
         adapter_output = self.adapters[game](map_x, flat_x)
-        policy_output = self.policy(adapter_output)
-        head_output = self.heads[game](policy_output)
+        actor_output, policy_output = self.policy(adapter_output)
+        head_output = self.heads[game](actor_output)
         return head_output, policy_output
 
 
