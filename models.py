@@ -541,18 +541,26 @@ class Transfer(nn.Module):
         self.heads = [Head(action_dim = self.action_dim[i], act_shape = self.act_shape, dense_dims = self.head_dense_dims)  # Need to be fixed
                      for i in range(self.num_games)]
 
-    def __call__(self, map_x, flat_x):
-        adapter_outputs = [self.adapters[i](map_x[i], flat_x[i]) 
-                         for i in range(self.num_games)]
-        actor_outputs, policy_outputs = self.policy(adapter_outputs[0])
-        head_outputs = [self.heads[i](actor_outputs[i]) for i in range(self.num_games)]
-        return head_outputs, policy_outputs
+    def __call__(self, map_x, flat_x, game):
+        for i in range(self.num_games):
+            if(i == game):
+                adapter_output = self.adapters[i](map_x[i], flat_x[i])
+            else:
+                _ = self.adapters[i](map_x[i], flat_x[i])
+        actor_output, policy_output = self.policy(adapter_output)
+        for i in range(self.num_games):
+            if(i == game):
+                head_output = self.heads[i](actor_output)
+            else:
+                _ = self.heads[i](actor_output)
+
+        return head_output, policy_output
     
     def forward(self, map_x, flat_x, game):
         adapter_output = self.adapters[game](map_x, flat_x)
         actor_output, policy_output = self.policy(adapter_output)
         head_output = self.heads[game](actor_output)
-        return head_output, policy_output
+        return head_output, jnp.squeeze(policy_output, axis=-1)
 
 
 class ActorCriticPCGRLTransfer(nn.Module):
@@ -566,7 +574,7 @@ class ActorCriticPCGRLTransfer(nn.Module):
     def setup(self):
         self.network = self.subnet
 
-    def __call__(self, x: PCGRLObs, num_games):
+    def __call__(self, x: PCGRLObs, num_games, game):
         map_obs = [x[i].map_obs for i in range(num_games)]
         ctrl_obs = [x[i].flat_obs for i in range(num_games)]
         # print("Game inside transfer:", game)
@@ -574,39 +582,34 @@ class ActorCriticPCGRLTransfer(nn.Module):
         # Hack. We had to put dummy ctrl obs's here to placate jax tree map during minibatch creation (FIXME?)
         # Now we need to remove them :)
         ctrl_obs = [ctrl_obs[i][:, :self.n_ctrl_metrics] for i in range(num_games)]
-
         # n_gpu = x.shape[0]
         # n_envs = x.shape[1]
         # x_shape = x.shape[2:]
         # x = x.reshape((n_gpu * n_envs, *x_shape))
 
-        act, val = self.network(map_obs, ctrl_obs)
-
-        act = [act[i].reshape((act[i].shape[0], self.n_agents, *self.act_shape, -1)) for i in range(num_games)]
+        act, val = self.network(map_obs, ctrl_obs, game)
+        act = act.reshape((act.shape[0], self.n_agents, *self.act_shape, -1))
         # val = val.reshape((n_gpu, n_envs))
         # act = act.reshape((n_gpu, n_envs, self.n_agents, *self.act_shape, -1))
 
-        pi = [distrax.Categorical(logits=act[i]) for i in range(num_games)]
+        pi = distrax.Categorical(logits=act)
 
-        return pi, val
+        return pi, jnp.squeeze(val, axis=-1)
 
         
     def forward(self, x: PCGRLObs, game: int):
         map_obs = x.map_obs
         ctrl_obs = x.flat_obs
         # print("Game inside transfer:", game)
-
         # Hack. We had to put dummy ctrl obs's here to placate jax tree map during minibatch creation (FIXME?)
         # Now we need to remove them :)
         ctrl_obs = ctrl_obs[:, :self.n_ctrl_metrics]
-
         # n_gpu = x.shape[0]
         # n_envs = x.shape[1]
         # x_shape = x.shape[2:]
         # x = x.reshape((n_gpu * n_envs, *x_shape))
 
         act, val = self.network.forward(map_obs, ctrl_obs, game)
-
         act = act.reshape((act.shape[0], self.n_agents, *self.act_shape, -1))
         # val = val.reshape((n_gpu, n_envs))
         # act = act.reshape((n_gpu, n_envs, self.n_agents, *self.act_shape, -1))
