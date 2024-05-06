@@ -185,7 +185,7 @@ def init_network(env: PCGRLEnv, env_params: PCGRLEnvParams, config: Config):
         raise Exception(f"Unknown model {config.model}")
     # if config.env_name == 'PCGRL':
     if 'PCGRL' in config.env_name:
-        network = ActorCriticPCGRLTransfer(network, act_shape=config.act_shape,
+        network = ActorCriticPCGRL(network, act_shape=config.act_shape,
                             n_agents=config.n_agents, n_ctrl_metrics=len(config.ctrl_metrics))
     # elif config.env_name == 'PlayPCGRL':
     #     network = ActorCriticPlayPCGRL(network)
@@ -251,14 +251,14 @@ def get_env_params_from_config_transfer(config: Config):
     rf_size = max(config.arf_size, config.vrf_size)
     rf_shape = (rf_size, rf_size) if not config.is_3d else (rf_size, rf_size, rf_size)
 
-    act_shape = config.act_shape
+    act_shape = tuple(config.act_shape)
     if config.is_3d:
         assert len(config.act_shape) == 3
 
     # Convert strings to enum ints
     problem = [ProbEnum[config.problem[i].upper()] for i in range(config.num_games)]
     prob_cls = [PROB_CLASSES[problem[i]] for i in range(config.num_games)]
-    ctrl_metrics = tuple([int(prob_cls.metrics_enum[c.upper()]) for c in config.ctrl_metrics])
+    ctrl_metrics = [tuple([int(prob_cls[i].metrics_enum[c.upper()]) for c in config.ctrl_metrics]) for i in range(config.num_games)]
 
     env_params = [PCGRLEnvParams(
         problem=problem[i],
@@ -270,7 +270,7 @@ def get_env_params_from_config_transfer(config: Config):
         n_freezies=config.n_freezies,
         n_agents=config.n_agents,
         max_board_scans=config.max_board_scans,
-        ctrl_metrics=ctrl_metrics,
+        ctrl_metrics=ctrl_metrics[i],
         change_pct=config.change_pct,
         randomize_map_shape=config.randomize_map_shape,
         empty_start=config.empty_start,
