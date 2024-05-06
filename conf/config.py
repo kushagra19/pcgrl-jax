@@ -21,7 +21,8 @@ class Config:
     GAMMA: float = 0.99
     GAE_LAMBDA: float = 0.95
     CLIP_EPS: float = 0.2
-    ENT_OEF: float = 0.5
+    ENT_COEF: float = 0.01
+    VF_COEF: float = 0.5
     MAX_GRAD_NORM: float = 0.5
     activCOEF: float = 0.01
     VF_Cation: str = "relu"
@@ -33,7 +34,7 @@ class Config:
 
     problem: str = "binary"
     representation: str = "narrow"
-    model: str = "transfer"
+    model: str = "conv2"
 
     map_width: int = 16
     randomize_map_shape: bool = False
@@ -144,7 +145,7 @@ class EvalConfig(TrainConfig):
 
 @dataclass
 class EnjoyConfig(EvalConfig):
-    random_agent: bool = True
+    random_agent: bool = False
     # How many episodes to render as gifs
     n_eps: int = 5
     eval_map_width: Optional[int] = None
@@ -164,7 +165,8 @@ class TransferConfig:
     GAMMA: float = 0.99
     GAE_LAMBDA: float = 0.95
     CLIP_EPS: float = 0.2
-    ENT_OEF: float = 0.5
+    ENT_COEF: float = 0.01
+    VF_COEF: float = 0.5
     MAX_GRAD_NORM: float = 0.5
     activCOEF: float = 0.01
     VF_Cation: str = "relu"
@@ -221,7 +223,7 @@ class TransferConfig:
     policy_dense_dims: Tuple[int, int]= (64, 256)
     head_dense_dims: Tuple[int, int]= (64, 256)
     hidden_dims: Tuple[int] = (64, 256)
-
+    gameChange: int = int(1e6)
     # TRAINING
     # Save a checkpoint after (at least) this many timesteps
     ckpt_freq: int = int(1e7)
@@ -250,7 +252,7 @@ class ProfileEnvConfig(Config):
 @dataclass
 class SweepConfig(EnjoyConfig, EvalConfig):
     name: Optional[str] = None
-    mode: str = 'train'
+    mode: str = 'enjoy'
     slurm: bool = True
 
 
